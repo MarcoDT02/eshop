@@ -1,40 +1,64 @@
-import json
-import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from werkzeug.security import generate_password_hash, check_password_hash
 
-FILENAME = "shop-data.json"
 
-def loaddata():
-    try:
-        if os.path.exists(FILENAME):
-            with open(FILENAME, "r") as data_file:
-                return json.load(data_file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
-    return {"products": [], "cart": []}
+class EShopDB:
+    def __init__(self, db_name, db_user, db_password, db_host="localhost", db_port="5432"):
+        self.conn = psycopg2.connect(
+            dbname=db_name,
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port
+        )
+        self.conn.autocommit = True
 
-def savedata(data):
-    with open(FILENAME, "w") as data_file:
-        json.dump(data, data_file, indent=4)
+    def register_user(self, username, password):
+        cursor = self.conn.cursor()
+        try:
+            password_hash = generate_password_hash(password)
+            cursor.execute(
+                "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id;",
+                (username, password_hash)
+            )
+            user_id = cursor.fetchone()[0]
+            return {"success": True, "user_id": user_id}
+        except psycopg2.errors.UniqueViolation:
+            return {"success": False, "error": "Username already exists."}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            cursor.close()
 
-class EShop:
-    def __init__(self):
-        data = loaddata()
-        self.products = data.get("products", [])
-        self.cart = data.get("cart", [])
+    def login_user(self, username, password):
+        cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM users WHERE username = %s;", (username,))
+        user = cursor.fetchone()
+        cursor.close()
 
-    def add_to_products(self, name, price, stock):
-        new_product = {
-            "id": len(self.products) + 1,
-            "name": name,
-            "price": float(price),
-            "stock": int(stock)
-        }
-        self.products.append(new_product)
-        savedata({
-            "products": self.products,
-            "cart": self.cart
-        })
+        if user and check_password_hash(user['password_hash'], password):
+            return {"success": True, "user_id": user['id'], "username": user['username']}
+        return {"success": False, "error": "Invalid credentials."}
+
+    def add_to_products(self, name, price, stock, seller_id):
+        cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(
+            "INSERT INTO products (name, price, stock, seller_id) VALUES (%s, %s, %s, %s) RETURNING *;",
+            (name, price, stock, seller_id)
+        )
+        new_product = cursor.fetchone()
+        cursor.close()
+
+        new_product['price'] = float(new_product['price'])
         return new_product
 
     def get_products(self):
-        return self.products
+        cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM products;")
+        products = cursor.fetchall()
+        cursor.close()
+
+        for p in products:
+            p['price'] = float(p['price'])
+        return products
