@@ -1,3 +1,4 @@
+import os
 from errors import register_error_handlers
 from flask import Flask
 from flask_jwt_extended import JWTManager
@@ -6,8 +7,8 @@ from routes import api_bp
 
 app = Flask(__name__)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = (
-    "postgresql://postgres:PASSWORD@localhost:5432/eshop"  # Replace PASSWORD --------------------------------
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", "postgresql+psycopg2://postgres:PASSWORD@localhost:5432/eshop"   -----------------
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["JWT_SECRET_KEY"] = (
